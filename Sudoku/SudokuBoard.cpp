@@ -4,6 +4,7 @@
 #include <cstring>
 
 // the board is empty so set everything to true
+// can't solve from an empty board so don't try lmao
 SudokuBoard::SudokuBoard()
 {
 	for (int i = 0; i < 9; i++) {
@@ -12,7 +13,6 @@ SudokuBoard::SudokuBoard()
 			board[i][j] = 0;
 		}
 	}
-	emptySpaces = 81;
 }
 
 // parses sudoku board assuming qqwing format
@@ -25,10 +25,17 @@ SudokuBoard::SudokuBoard(const char * str) : SudokuBoard()
 		for (int j = 0; j < 9; j++) {
 			if (str[i * 9 + j] == '.') {
 				board[i][j] = 0;
+				movesRequired.push_back(Move(i, j));
 			} else {
 				insert(i, j, str[i * 9 + j] - '0');
 			}
 		}
+	}
+	// insert permutes this, we wish to negate that
+	moveRequiredIndex = 0;
+	// also empty the move trace stack
+	while (!moveTrace.empty()) { 
+		moveTrace.pop(); 
 	}
 }
 
@@ -60,12 +67,12 @@ inline const bool& SudokuBoard::checkInsertIntoBox(unsigned row, unsigned col, u
 
 // check that an insertion given row is valid
 inline const bool& SudokuBoard::checkInsertIntoRow(unsigned row, unsigned char val) {
-	return boxValidityChecker[row][val - 1];
+	return rowValidityChecker[row][val - 1];
 }
 
 // check that an insertion given col is valid
 inline const bool& SudokuBoard::checkInsertIntoColumn(unsigned col, unsigned char val) {
-	return boxValidityChecker[col][val - 1];
+	return colValidityChecker[col][val - 1];
 }
 
 // sets a cell to be invalid
@@ -77,15 +84,11 @@ inline void SudokuBoard::setValidity(unsigned row, unsigned col, unsigned box, u
 // returns a vector of valid options to enter into a given cell
 std::vector<unsigned char> SudokuBoard::getValidValsForCell(unsigned row, unsigned col) {
 	unsigned box = (row / 3) * 3 + (col / 3);
-	// first get the correct array for the row, col, and box
-	bool * cellValidityRow = rowValidityChecker[row];
-	bool * cellValidityCol = colValidityChecker[col];
-	bool * cellValidityBox = boxValidityChecker[box];
 	// now go thorugh and construct the vector from the elements that are valid in the row, col, and box
 	std::vector<unsigned char> cellValidValues;
 	for (unsigned char i = 0; i < 9; i++) {
-		if (cellValidityBox[i] && cellValidityCol[i] && cellValidityRow[i]) {
-			cellValidValues.push_back(i);
+		if (boxValidityChecker[box][i] && colValidityChecker[col][i] && rowValidityChecker[row][i]) {
+			cellValidValues.push_back(i+1);
 		}
 	}
 	return cellValidValues;
@@ -106,14 +109,20 @@ bool SudokuBoard::insert(unsigned row, unsigned col, unsigned char val) {
 	// if the entry violates either the row, the column, or the box invariant, return false
 	if (!(checkInsertIntoRow(row, val) && checkInsertIntoColumn(col, val) && checkInsertIntoBox(box, val))) {
 		return false;
-	// otherwise insert and update tables as neccessary
+	// otherwise insert and update tables and stacks as neccessary
 	} else {
 		board[row][col] = val;
 		setValidity(row, col, box, val);
+		//moveTrace.push(Move(row, col, val));
+		// we have one less empty space
+		moveRequiredIndex++;
 		return true;
 	}
-	// we have one less empty space
-	emptySpaces--;
+}
+
+// do it with a move
+inline bool SudokuBoard::insert(Move move) {
+	return insert(move.row, move.col, move.val);
 }
 
 // remove a value from the cell from a given row and col
@@ -122,14 +131,73 @@ void SudokuBoard::remove(unsigned row, unsigned col) {
 	unsetValidity(row, col);
 	// change the cell state back to empty (denoted by a 0)
 	board[row][col] = 0;
+	// remove this move from the move trace
+	//moveTrace.pop();
 	// we have one more empty space
-	emptySpaces++;
+	moveRequiredIndex--;
+	// janky trying to fixed the issue of removing the first move
+	if (moveRequiredIndex < 0) {
+		moveRequiredIndex = 0;
+	}
+}
+
+// do it with a move
+inline void SudokuBoard::remove(Move move) {
+	remove(move.row, move.col);
+}
+
+Move SudokuBoard::getNextEmptySpace() {
+	for (int i = 0; i < 9; i++) {
+		for (int j = 0; j < 9; j++) {
+			if (board[i][j] == 0) {
+				return Move(i, j, 0);
+			}
+		}
+	}
 }
 
 // actually solve the game
 // i.e. what this program was made for
+// TODO: debug why this isn't working
+// TODO as well: think about the algorithm a lot more and actually plan it out
 void SudokuBoard::solve() {
+	// while there are still moves to make do something
+	while (moveRequiredIndex != movesRequired.size() - 1) {
+		// get an unoccupied space to start off with
+		Move move = movesRequired[moveRequiredIndex];
+		//Move move = getNextEmptySpace();
+		// debugging
+		if (board[move.row][move.col] != 0) {
+			// you've already visited here
+			int sx = 33;
+			sx++;
+			// this move led to a dead end so remove it
+			remove(move);
+			// take the top possible move to replace this one if you don't need to backtrack
+			if (!(movePossiblities.top().col == move.col && movePossiblities.top().row == move.row)) {
+				insert(movePossiblities.top());
+				movePossiblities.pop();
+			}
 
+		} else {
+			// check all of the valid values and push them onto the moves possible stack
+			std::vector<unsigned char> validVals = getValidValsForCell(move.row, move.col);
+			// if there are no valid values, remove the move and return
+			if (validVals.empty()) {
+				remove(move);
+			}
+			else {
+				// otherwise push all the valid moves onto the stack
+				for (auto &val : validVals) {
+					movePossiblities.push(Move(move.row, move.col, val));
+				}
+				// select a new move to be the top one and go back to doing shit
+				insert(movePossiblities.top());
+				movePossiblities.pop();
+			}
+		}
+		std::cout << *this << std::endl;
+	}
 }
 
 // overloads the << operator so you can pipe the class to a stream
@@ -143,7 +211,10 @@ std::ostream& operator<< (std::ostream& os, const SudokuBoard& sb) {
 			if (j == 3 || j == 6) {
 				os << " |";
 			}
-			if (sb.board[i][j] == 0) {
+			if (sb.moveRequiredIndex >= 0 && i == sb.movesRequired[sb.moveRequiredIndex].row && j == sb.movesRequired[sb.moveRequiredIndex].col) {
+				os << " x";
+			}
+			else if (sb.board[i][j] == 0) {
 				os << " .";
 			} else {
 				os << " " << +sb.board[i][j];

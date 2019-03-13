@@ -11,6 +11,15 @@ struct Move {
 	unsigned char row;
 	unsigned char col;
 	unsigned char val;
+
+	// default constructor
+	Move() {}
+	// constructor used to create a move
+	Move(unsigned char r, unsigned char c, unsigned char v = 0) {
+		row = r;
+		col = c;
+		val = v;
+	}
 };
 
 // this is the class that holds the Sudoku Board
@@ -29,6 +38,9 @@ public:
 	bool checkColumn(unsigned col);
 	bool checkBox(unsigned box);
 
+	// gets the next empty space in the grid
+	Move getNextEmptySpace();
+
 	// checks that inserting into a given row/col/box is valid
 	inline const bool& checkInsertIntoRow(unsigned row, unsigned char val);
 	inline const bool& checkInsertIntoColumn(unsigned col, unsigned char val);
@@ -45,9 +57,11 @@ public:
 
 	// insert into the cell after doing the checks
 	bool insert(unsigned row, unsigned col, unsigned char val);
+	bool insert(Move move);
 
 	// remove a value from a cell und update the validity tables
 	void remove(unsigned row, unsigned col);
+	void remove(Move move);
 
 	// overload the << operator to print
 	friend std::ostream& operator<< (std::ostream& os, const SudokuBoard& sb);
@@ -63,11 +77,14 @@ private:
 	bool rowValidityChecker[9][9];
 	bool colValidityChecker[9][9];
 	bool boxValidityChecker[9][9];
-	// stacks to keep track of moves that have been made and moves that are yet to be made
+	// stack to keep track of which moves are possible to make
+	// basically the struct used to search in the DFS
 	std::stack<Move> movePossiblities;
+	// stack to keep track of which moves have been made
 	std::stack<Move> moveTrace;
-	// keeps track of how many moves remain
-	short emptySpaces;
+	// keeps track of the moves that remain
+	std::vector<Move> movesRequired;
+	short moveRequiredIndex;
 };
 
 
