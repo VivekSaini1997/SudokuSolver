@@ -11,6 +11,9 @@ struct Move {
 	unsigned char row;
 	unsigned char col;
 	unsigned char val;
+	// boolean to specify that this value was in the sudoku board to begin with
+	// and not added later as part of the backtracking solution process
+	bool inOriginal = true;
 
 	// default constructor
 	Move() {}
@@ -63,6 +66,10 @@ public:
 	void remove(unsigned row, unsigned col);
 	void remove(Move move);
 
+	// remove all the values from a range
+	// used to backtrack really
+	void remove(Move firstMove, Move secondMove);
+
 	// overload the << operator to print
 	friend std::ostream& operator<< (std::ostream& os, const SudokuBoard& sb);
 
@@ -73,6 +80,8 @@ private:
 	unsigned char board[9][9];
 	// not using this right now, want to get the logic working first
 	unsigned char boardTransposed[9][9];
+	// store whether a given space is "original"
+	bool isSpaceOriginal[9][9];
 	// used to check if a given row/col/box is valid for insertion
 	bool rowValidityChecker[9][9];
 	bool colValidityChecker[9][9];
@@ -85,6 +94,14 @@ private:
 	// keeps track of the moves that remain
 	std::vector<Move> movesRequired;
 	short moveRequiredIndex;
+	// pointers to isSpaceOriginal and board table
+	// for perfomance and convenience
+	bool * isSpaceOriginalPointer;
+	unsigned char * boardPointer;
+	// a debugging index for the next move
+	unsigned char debugIdx;
+	// another debugging car to check if board is solved
+	bool solved;
 };
 
 

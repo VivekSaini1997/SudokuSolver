@@ -11,8 +11,14 @@ SudokuBoard::SudokuBoard()
 		for (int j = 0; j < 9; j++) {
 			rowValidityChecker[i][j] = colValidityChecker[i][j] = boxValidityChecker[i][j] = true;
 			board[i][j] = 0;
+			isSpaceOriginal[i][j] = false;
 		}
 	}
+	// define pointers to parts of the class to make the indexing more time efficient
+	isSpaceOriginalPointer = &isSpaceOriginal[0][0];
+	boardPointer = &board[0][0];
+	// assume the board isn't solved to begin with
+	solved = false;
 }
 
 // parses sudoku board assuming qqwing format
@@ -28,6 +34,7 @@ SudokuBoard::SudokuBoard(const char * str) : SudokuBoard()
 				movesRequired.push_back(Move(i, j));
 			} else {
 				insert(i, j, str[i * 9 + j] - '0');
+				isSpaceOriginal[i][j] = true;
 			}
 		}
 	}
@@ -78,7 +85,9 @@ inline const bool& SudokuBoard::checkInsertIntoColumn(unsigned col, unsigned cha
 // sets a cell to be invalid
 // used after insertion
 inline void SudokuBoard::setValidity(unsigned row, unsigned col, unsigned box, unsigned val) {
-	boxValidityChecker[box][val - 1] = rowValidityChecker[row][val - 1] = colValidityChecker[col][val - 1] = false;
+	boxValidityChecker[box][val - 1] = false;
+	rowValidityChecker[row][val - 1] = false; 
+	colValidityChecker[col][val - 1] = false;
 }
 
 // returns a vector of valid options to enter into a given cell
@@ -99,7 +108,9 @@ std::vector<unsigned char> SudokuBoard::getValidValsForCell(unsigned row, unsign
 inline void SudokuBoard::unsetValidity(unsigned row, unsigned col) {
 	unsigned box = (row / 3) * 3 + (col / 3);
 	unsigned val = board[row][col];
-	boxValidityChecker[box][val - 1] = rowValidityChecker[row][val - 1] = colValidityChecker[col][val - 1] = true;
+	boxValidityChecker[box][val - 1] = true;
+	rowValidityChecker[row][val - 1] = true;
+	colValidityChecker[col][val - 1] = true;
 }
 
 // do the checks above and then insert
@@ -146,6 +157,20 @@ inline void SudokuBoard::remove(Move move) {
 	remove(move.row, move.col);
 }
 
+// do it by specifying two moves
+// remove all moves in the range firstMove to secondMove inclusive
+// excluding those already in the board from the beginning
+inline void SudokuBoard::remove(Move firstMove, Move secondMove) {
+	for (unsigned char idx = firstMove.row * 9 + firstMove.col; idx <= secondMove.row * 9 + secondMove.col; idx++) {
+		// if it's not an original space, proceed
+		if (isSpaceOriginalPointer[idx] == false) {
+			Move moveToBeRemoved = Move(idx / 9, idx % 9);
+			remove(moveToBeRemoved);
+		}
+
+	}
+}
+// gets the next empty space the brute force way
 Move SudokuBoard::getNextEmptySpace() {
 	for (int i = 0; i < 9; i++) {
 		for (int j = 0; j < 9; j++) {
@@ -154,6 +179,15 @@ Move SudokuBoard::getNextEmptySpace() {
 			}
 		}
 	}
+	return Move(-1, -1, 0);
+}
+
+// return the relative index of a move
+// i.e. instead of using row, col to determine where the move is
+// use it's index assuming the 2d board was one dimensional with the top left
+// being 0 and the bottom right being 80
+inline unsigned char returnRelativeIndex(const Move& move) {
+	return move.row * 9 + move.col;
 }
 
 // actually solve the game
@@ -161,10 +195,62 @@ Move SudokuBoard::getNextEmptySpace() {
 // TODO: debug why this isn't working
 // TODO as well: think about the algorithm a lot more and actually plan it out
 void SudokuBoard::solve() {
+	// the first set of possibilities is the set available from the first move
+	Move currentMove = getNextEmptySpace();
+	std::vector<unsigned char> validVals = getValidValsForCell(currentMove.row, currentMove.col);
+	// push all the valid moves onto the stack
+	for (auto &val : validVals) {
+		movePossiblities.push(Move(currentMove.row, currentMove.col, val));
+	}
+	// default previous move for logic involving resetting the board from one branch to another 
+	Move previousMove = currentMove;
 	// while there are still moves to make do something
-	while (moveRequiredIndex != movesRequired.size() - 1) {
-		// get an unoccupied space to start off with
-		Move move = movesRequired[moveRequiredIndex];
+	// TODO: figure out the victory exit condition
+	while (!movePossiblities.empty()) {
+
+		// debugging condition variable
+		bool cond = (board[0][0] == 2 && board[0][1] == 4 && board[3][3] == 2 && board[3][4] == 3 && board[2][3] == 1 && board[5][3] == 7);
+
+		// get a new space to start off with
+		currentMove = movePossiblities.top();
+		// pop it so you don't go back to it
+		movePossiblities.pop();
+		// if neccessary, remove some entries from the board
+		// only if the previous move had a higher index than the current move
+		// this mean we backtracked and need to clean up the board
+		if (returnRelativeIndex(previousMove) >= returnRelativeIndex(currentMove)) {
+			remove(currentMove, previousMove);
+		}
+		// now actually draw the move onto the board
+		if (!insert(currentMove)) {
+			// how did you not insert, don't remember tbh
+			std::cout << "???" << std::endl;
+		}
+		// get the next move's location
+		Move nextMove = getNextEmptySpace();
+		// this is to exit if the next empty space is invalid
+		// means the board is solved
+		// TODO: figure out better exit condition
+		if (nextMove.row == 255 && nextMove.col == 255) {
+			solved = true;
+			break;
+		}
+		// check all of the valid values and push them onto the moves possible stack
+		std::vector<unsigned char> validVals = getValidValsForCell(nextMove.row, nextMove.col);
+		for (auto &val : validVals) {
+			movePossiblities.push(Move(nextMove.row, nextMove.col, val));
+		}
+		// now this move is the previous move
+		previousMove = currentMove;
+		// draw this to debug for now
+		// TODO: don't actually try to solve things with this
+		// it will take a very long time to do
+		debugIdx = returnRelativeIndex(nextMove);
+		// debug conditions
+		if (cond) {
+			//std::cout << *this << std::endl;
+		}
+		/* Experimental logic that didn't quite work
 		//Move move = getNextEmptySpace();
 		// debugging
 		if (board[move.row][move.col] != 0) {
@@ -197,6 +283,7 @@ void SudokuBoard::solve() {
 			}
 		}
 		std::cout << *this << std::endl;
+		*/
 	}
 }
 
@@ -211,7 +298,7 @@ std::ostream& operator<< (std::ostream& os, const SudokuBoard& sb) {
 			if (j == 3 || j == 6) {
 				os << " |";
 			}
-			if (sb.moveRequiredIndex >= 0 && i == sb.movesRequired[sb.moveRequiredIndex].row && j == sb.movesRequired[sb.moveRequiredIndex].col) {
+			if (i * 9 + j == sb.debugIdx && !sb.solved) {
 				os << " x";
 			}
 			else if (sb.board[i][j] == 0) {
